@@ -4,16 +4,14 @@
 import os
 import numpy as np
 
-import concurrent.futures
-from collections import deque
 from copy import deepcopy
-from contextlib import ExitStack
-from typing import Callable, Optional
 import time
 import bifrost as bf
-from meegkit.phase import ECHT
 
 from bifrost.pipeline import TransformBlock, MultiTransformBlock
+
+
+
 
 class PrintBlock(TransformBlock):
     def __init__(self, iring, gulp_nframe=1,
@@ -55,39 +53,11 @@ class CustAccumulateBlock(TransformBlock):
         odata = ospan.data
         # print(f"Input_span: {idata}")
         # print(f"Output_span before calc: {odata}")
-        odata[:] = idata
-        print(f"{self.name}, output gulp: {odata.shape}, {odata}")
+        odata[:] = idata * 5
+        # print(f"{self.name}, output gulp: {odata.shape}, {odata}")
         
         return self._gulp_nframe
     
-
-class CustAccumulateBlock(TransformBlock):
-    def __init__(self, iring, nframe, dtype=None, gulp_nframe=1, blockname=None,
-             *args, **kwargs):
-        super(CustAccumulateBlock, self).__init__(iring, gulp_nframe=gulp_nframe, name=blockname,
-                                              *args, **kwargs)
-        self.nframe = nframe
-        self.dtype  = dtype
-    def on_sequence(self, iseq):
-        ihdr = iseq.header
-        ohdr = deepcopy(ihdr)
-        otensor = ohdr['_tensor']
-        if 'scales' in otensor:
-            frame_axis = otensor['shape'].index(-1)
-            otensor['scales'][frame_axis][1] *= self.nframe
-        if self.dtype is not None:
-            otensor['dtype'] = self.dtype
-        self.frame_count = 0
-        return ohdr
-    def on_data(self, ispan, ospan):
-        idata = ispan.data
-        odata = ospan.data
-        # print(f"Input_span: {idata}")
-        # print(f"Output_span before calc: {odata}")
-        odata[:] = idata
-        print(f"{self.name}, output gulp: {odata.shape}, {odata}")
-        
-        return self._gulp_nframe
     
 class CustWorkerBlock(TransformBlock):
     def __init__(self, iring, nframe, dtype=None, gulp_nframe=1, blockname=None,start_offset=0, num_workers=2, win_size=1,
@@ -113,7 +83,7 @@ class CustWorkerBlock(TransformBlock):
             idata = ispan.data
             odata = ospan.data
             odata[:] = np.mean(idata)
-            print(f"{self.name}, output: {odata.shape}, {odata}")
+            # print(f"{self.name}, output: {odata.shape}, {odata}")
             self.count += 1
             return 
         else:
@@ -143,25 +113,25 @@ class MergeBlock(MultiTransformBlock):
         return
 
 
-filename = ['/home/linda/bifrost/test_f32.bin']
+filename = ['./test_f32.bin']
 
-start = time.time()
+
 print("Building pipeline")
 data1 = bf.blocks.BinaryFileReadBlock(filename, gulp_size=1, gulp_nframe=1, dtype='f32')
 
-data3 = CustWorkerBlock(data1, nframe=1, gulp_nframe=1, start_offset=0, win_size = 5,num_workers=3,blockname='worker_1')
+data3 = CustWorkerBlock(data1, nframe=1, gulp_nframe=1, start_offset=0, win_size=5,num_workers=3,blockname='worker_1')
 data4 = CustWorkerBlock(data1, nframe=1, gulp_nframe=1, start_offset=-1, win_size=5,num_workers=3,blockname='worker_2')
 data5 = CustWorkerBlock(data1, nframe=1, gulp_nframe=1, start_offset=-2, win_size=5,num_workers=3,blockname='worker_3')
 
 
-data5= MergeBlock([data3, data4,data5], gulp_nframe=1)
+data5= MergeBlock([data3, data4,data5], gulp_nframe=1)      #has to be 1 in current implementation
 monitor = PrintBlock(data5, gulp_nframe=5)
-# data = bf.blocks.copy(data, 'cuda_host')
-# bf.blocks.binary_write(data)
 
 print("Running pipeline")
 pipeline = bf.get_default_pipeline()
 pipeline.dot_graph().render(filename='pipeline_graph_workers', format='png', cleanup=True)
+
+start = time.time()
 pipeline.run()
 
 print(f"Needed time: {time.time() - start} seconds")
