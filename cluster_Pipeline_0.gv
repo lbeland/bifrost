@@ -1,0 +1,17 @@
+digraph cluster_Pipeline_0 {
+	"Pipeline_0/BinaryFileReadBlock_0" [label=BinaryFileReadBlock_0 fillcolor=white shape=box style=filled]
+	ring_0 [fillcolor=deepskyblue shape=ellipse style=filled]
+	"Pipeline_0/BinaryFileReadBlock_0" -> ring_0
+	"Pipeline_0/CopyBlock_0" [label=CopyBlock_0 fillcolor=lightsteelblue shape=box style=filled]
+	ring_2 [fillcolor=limegreen shape=ellipse style=filled]
+	"Pipeline_0/CopyBlock_0" -> ring_2
+	ring_0 -> "Pipeline_0/CopyBlock_0"
+	"Pipeline_0/CustAccumulateBlock_0" [label=CustAccumulateBlock_0 fillcolor=white shape=box style=filled]
+	ring_3 [fillcolor=limegreen shape=ellipse style=filled]
+	"Pipeline_0/CustAccumulateBlock_0" -> ring_3
+	ring_2 -> "Pipeline_0/CustAccumulateBlock_0"
+	"Pipeline_0/CustAccumulateBlock_1" [label=CustAccumulateBlock_1 fillcolor=white shape=box style=filled]
+	ring_4 [fillcolor=limegreen shape=ellipse style=filled]
+	"Pipeline_0/CustAccumulateBlock_1" -> ring_4
+	ring_2 -> "Pipeline_0/CustAccumulateBlock_1"
+}
