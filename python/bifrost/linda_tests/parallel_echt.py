@@ -154,20 +154,22 @@ filename = ['./test_f32.bin']
 
 print("Building pipeline")
 
-fs  = 5000
+fs  = 10000
 f0  = 10
 win_size = 2000
 
 # Use the custom sine source instead of a binary file for this demo.
-data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=5, gulp_nframe=1)
+data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=5, gulp_nframe=1,core=0)
 
-data3 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=0, win_size=win_size,num_workers=1,blockname='echt_worker_1')
-# data4 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-1, win_size=win_size,num_workers=2,blockname='echt_worker_2')
-# data5 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-2, win_size=win_size,num_workers=3,blockname='echt_worker_3')
+data3 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=0, win_size=win_size,num_workers=3,blockname='echt_worker_1',core=1, guarantee=False)
+data4 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-1, win_size=win_size,num_workers=3,blockname='echt_worker_2',core=2, guarantee=False)
+data5 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-2, win_size=win_size,num_workers=3,blockname='echt_worker_3',core=3, guarantee=False)
 
 
-data5= MergeBlock([data3], gulp_nframe=1)
-# monitor = PrintBlock(data5, gulp_nframe=100)
+# data5= MergeBlock([data3, data4, data5], gulp_nframe=1,core=2)
+monitor = PrintBlock(data3, gulp_nframe=100,core=4)
+monitor2 = PrintBlock(data4, gulp_nframe=100,core=5)
+monitor3 = PrintBlock(data5, gulp_nframe=100,core=6)
 
 print("Running pipeline")
 pipeline = bf.get_default_pipeline()
