@@ -62,6 +62,8 @@ class SineSourceBlock(bf.pipeline.SourceBlock):
         
         # compute sample
         sample = np.float32(np.sin(2.0 * np.pi * self.frequency * (self._emitted * self.dt)))
+        # sample = np.float32((self._emitted * self.dt))
+
         out[:] = sample
         self._emitted += 1
         # Stop if we've emitted enough samples
@@ -82,13 +84,39 @@ class PrintBlock(TransformBlock):
         return ohdr
     def on_data(self, ispan, ospan):
         idata = ispan.data
-        out = ospan.data
-        out[:] = idata
-        # print(f"{self.name} got data gulp: {idata.shape}, {idata}")
+        # print(f"{self.name} got data: {idata.shape}, {idata}")
         return None
 
 
-    
+class ECHTBlock(TransformBlock):
+    def __init__(self, iring, f0,fs,dtype=None, gulp_nframe=1, blockname=None,win_size=1,
+             *args, **kwargs):
+        super(ECHTBlock, self).__init__(iring, gulp_nframe=gulp_nframe, name=blockname,
+                                              *args, **kwargs)
+        self.dtype  = dtype
+        self.win_size = win_size
+        self.f0 = f0
+        self.fs = fs
+    def define_input_overlap_nframe(self, iseq):
+        return self.win_size - self._gulp_nframe
+    def define_output_nframes(self, input_nframe):
+        # return one value per window (mean of the window), default would be n_input_frames=n_output_frames
+        return 1
+    def on_sequence(self, iseq):
+        ihdr = iseq.header
+        ohdr = deepcopy(ihdr)
+        filt_BW = self.f0 / 2
+        l_freq = self.f0 - filt_BW / 2
+        h_freq = self.f0 + filt_BW / 2
+        self.echt = ECHT(l_freq, h_freq, self.fs,filt_order=1)
+        return ohdr
+    def on_data(self, ispan, ospan):
+        idata = ispan.data
+        # print(f"{self.name} got data gulp: {idata.shape}, {idata[0:11]}")
+        ospan.data[:] = np.real(np.fft.fft(idata)[-1]) #self.echt.fit_transform(idata)[-1])
+        # print(f"{self.name}, output: {odata.shape}, {odata}")
+        return 
+
     
 class ECHTWorkerBlock(TransformBlock):
     def __init__(self, iring, f0,fs,dtype=None, gulp_nframe=1, blockname=None,start_offset=0, num_workers=2, win_size=1,
@@ -154,26 +182,30 @@ filename = ['./test_f32.bin']
 
 print("Building pipeline")
 
-fs  = 10000
+fs  = 5000
 f0  = 10
-win_size = 2000
+win_size = int((1/f0 *2)*fs) # 2 cycles
+print(f"win_size: {win_size} samples")
 
 # Use the custom sine source instead of a binary file for this demo.
-data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=5, gulp_nframe=1,core=0)
+data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=10, gulp_nframe=1,core=0)
 
-data3 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=0, win_size=win_size,num_workers=3,blockname='echt_worker_1',core=1, guarantee=False)
-data4 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-1, win_size=win_size,num_workers=3,blockname='echt_worker_2',core=2, guarantee=False)
-data5 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-2, win_size=win_size,num_workers=3,blockname='echt_worker_3',core=3, guarantee=False)
+# data3 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=0, win_size=win_size,num_workers=3,blockname='echt_worker_1',core=1, guarantee=False)
+# data4 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-1, win_size=win_size,num_workers=3,blockname='echt_worker_2',core=2, guarantee=False)
+# data5 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-2, win_size=win_size,num_workers=3,blockname='echt_worker_3',core=3, guarantee=False)
 
+overlap = int(1/f0 * 0.1 * fs)
+print(f"overlap: {overlap} samples")
+data2 = ECHTBlock(data1, f0=f0, fs=fs, gulp_nframe=overlap, win_size=win_size, blockname='echt_full',core=1)
 
 # data5= MergeBlock([data3, data4, data5], gulp_nframe=1,core=2)
-monitor = PrintBlock(data3, gulp_nframe=100,core=4)
-monitor2 = PrintBlock(data4, gulp_nframe=100,core=5)
-monitor3 = PrintBlock(data5, gulp_nframe=100,core=6)
+monitor = PrintBlock(data2, gulp_nframe=1,core=2)
+# monitor2 = PrintBlock(data4, gulp_nframe=100,core=5)
+# monitor3 = PrintBlock(data5, gulp_nframe=100,core=6)
 
 print("Running pipeline")
 pipeline = bf.get_default_pipeline()
-pipeline.dot_graph().render(filename='pipeline_graph_echt', format='png', cleanup=True)
+# pipeline.dot_graph().render(filename='pipeline_graph_echt', format='png', cleanup=True)
 
 start = time.time()
 pipeline.run()

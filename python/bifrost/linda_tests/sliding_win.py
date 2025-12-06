@@ -46,7 +46,7 @@ filename = ['/home/linda/bifrost/test_f32.bin']
 
 # Example: two sources
 data1 = bf.blocks.BinaryFileReadBlock(filename, gulp_size=1, gulp_nframe=1, dtype='f32')
-data2 = SlideBlock(data1, dtype='f32', gulp_nframe=1, win_size=5)
+data2 = SlideBlock(data1, dtype='f32', gulp_nframe=3, win_size=5)
 
 
 monitor = PrintBlock(data2, gulp_nframe=5)
