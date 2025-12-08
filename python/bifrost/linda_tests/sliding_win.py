@@ -42,7 +42,7 @@ class SlideBlock(TransformBlock):
         return len(idata)
 
 
-filename = ['/home/linda/bifrost/test_f32.bin']
+filename = ['./test_f32.bin']
 
 # Example: two sources
 data1 = bf.blocks.BinaryFileReadBlock(filename, gulp_size=1, gulp_nframe=1, dtype='f32')

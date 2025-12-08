@@ -8,6 +8,7 @@ from copy import deepcopy
 import time
 import bifrost as bf
 from meegkit.phase import ECHT
+from scipy.signal import iirfilter, lfilter, lfilter_zi, sosfilt, sosfilt_zi, butter
 
 from bifrost.pipeline import TransformBlock, MultiTransformBlock
 
@@ -61,16 +62,48 @@ class SineSourceBlock(bf.pipeline.SourceBlock):
         out = ospan.data
         
         # compute sample
-        sample = np.float32(np.sin(2.0 * np.pi * self.frequency * (self._emitted * self.dt)))
+        sample = np.float32(np.sin(2.0 * np.pi * self.frequency * (self._emitted * self.dt))+np.random.normal(0,0.1))
         # sample = np.float32((self._emitted * self.dt))
 
         out[:] = sample
         self._emitted += 1
+        if self._emitted % (self.sampling_rate*1) == 0:
+            print('sleeping...')
+            time.sleep(0.1)  # simulate some delay every second
         # Stop if we've emitted enough samples
         if (self._emitted >= self.n_samples):
             print('done emitting samples')
             self.shutdown()
         return [1]
+    
+
+class FilterBlock(TransformBlock):
+    def __init__(self, iring, dtype=None, gulp_nframe=1, fs=None, order=2, freq=None,filter_type='bandstop',blockname=None,
+             *args, **kwargs):
+        super(FilterBlock, self).__init__(iring, gulp_nframe=gulp_nframe, name=blockname,
+                                              *args, **kwargs)
+        self.dtype  = dtype
+        self.order = order
+        self.freq = freq  # Keep frequencies in Hz, not normalized
+        self.filter_type = filter_type
+        self.fs = fs
+    def on_sequence(self, iseq):
+        ihdr = iseq.header
+        ohdr = deepcopy(ihdr)
+
+        self.sos = butter(self.order, self.freq, btype=self.filter_type, output="sos", fs=self.fs)
+        # Initialize filter state for filtering along axis=0 with shape (gulp_nframe, 1)
+        # zi shape needs to be (n_sections, 2, 1) for axis=0 filtering
+        zi_base = sosfilt_zi(self.sos)  # shape: (n_sections, 2)
+        self.zi = zi_base[:, :, np.newaxis] * 0  # expand to (n_sections, 2, 1)
+        return ohdr
+    def on_data(self, ispan, ospan):
+        idata = ispan.data
+        out = ospan.data
+        # print(f"{self.name} got data gulp: {idata.shape}, {idata}")
+        y, self.zi = sosfilt(self.sos, idata, zi=self.zi, axis=0)
+        out[:] = y
+        return 
 
 
 class PrintBlock(TransformBlock):
@@ -113,7 +146,7 @@ class ECHTBlock(TransformBlock):
     def on_data(self, ispan, ospan):
         idata = ispan.data
         # print(f"{self.name} got data gulp: {idata.shape}, {idata[0:11]}")
-        ospan.data[:] = np.real(np.fft.fft(idata)[-1]) #self.echt.fit_transform(idata)[-1])
+        ospan.data[:] = np.angle(self.echt.fit_transform(idata))[-1]
         # print(f"{self.name}, output: {odata.shape}, {odata}")
         return 
 
@@ -146,7 +179,7 @@ class ECHTWorkerBlock(TransformBlock):
         if self.count % self.num_workers == 0:
             idata = ispan.data
             odata = ospan.data
-            odata[:] = np.real(self.echt.fit_transform(idata)[-1])
+            odata[:] = np.angle(self.echt.fit_transform(idata)[-1])
             # print(f"{self.name}, output: {odata.shape}, {odata}")
             self.count += 1
             return 
@@ -182,30 +215,36 @@ filename = ['./test_f32.bin']
 
 print("Building pipeline")
 
-fs  = 5000
+fs  = 10000
 f0  = 10
 win_size = int((1/f0 *2)*fs) # 2 cycles
 print(f"win_size: {win_size} samples")
 
 # Use the custom sine source instead of a binary file for this demo.
-data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=10, gulp_nframe=1,core=0)
+data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=10, gulp_nframe=1,core=1)
+bf.blocks.BinaryFileWriteBlock(data1, gulp_nframe=1000, file_ext='orig.bin')
 
-# data3 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=0, win_size=win_size,num_workers=3,blockname='echt_worker_1',core=1, guarantee=False)
-# data4 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-1, win_size=win_size,num_workers=3,blockname='echt_worker_2',core=2, guarantee=False)
-# data5 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=1, start_offset=-2, win_size=win_size,num_workers=3,blockname='echt_worker_3',core=3, guarantee=False)
+data2 = FilterBlock(data1, dtype='f32', gulp_nframe=win_size//5, fs=fs,order=3, freq=[9,11], filter_type='bandpass', blockname='filter',core=2)
 
-overlap = int(1/f0 * 0.1 * fs)
-print(f"overlap: {overlap} samples")
-data2 = ECHTBlock(data1, f0=f0, fs=fs, gulp_nframe=overlap, win_size=win_size, blockname='echt_full',core=1)
+window_shift = int(1/f0 * 0.2 * fs) # generate output on every sample (f0/fs) or every 5% of cycle
+print(f"window_shift: {window_shift} samples")
 
-# data5= MergeBlock([data3, data4, data5], gulp_nframe=1,core=2)
-monitor = PrintBlock(data2, gulp_nframe=1,core=2)
-# monitor2 = PrintBlock(data4, gulp_nframe=100,core=5)
-# monitor3 = PrintBlock(data5, gulp_nframe=100,core=6)
+# data3 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, start_offset=0, win_size=win_size,num_workers=3,blockname='echt_worker_1',core=1)
+# data4 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, start_offset=-1, win_size=win_size,num_workers=3,blockname='echt_worker_2',core=2)
+# data5 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, start_offset=-2, win_size=win_size,num_workers=3,blockname='echt_worker_3',core=3)
+# data2 = MergeBlock([data3, data4, data5], gulp_nframe=1, core=4)
+
+
+data3 = ECHTBlock(data2, f0=f0, fs=fs, gulp_nframe=window_shift, win_size=win_size, blockname='ecHT',core=3)
+
+# monitor = PrintBlock(data2, gulp_nframe=1,core=5)
+
+
+bf.blocks.BinaryFileWriteBlock(data3, gulp_nframe=1000, file_ext='echt.bin')
 
 print("Running pipeline")
 pipeline = bf.get_default_pipeline()
-# pipeline.dot_graph().render(filename='pipeline_graph_echt', format='png', cleanup=True)
+pipeline.dot_graph().render(filename='pipeline_graph_echt', format='png', cleanup=True)
 
 start = time.time()
 pipeline.run()
@@ -215,6 +254,9 @@ pipeline.shutdown()
 
 print("All done")
  
+
+
+
 """LOGIC
 - each worker reads each sliding window (so each time a new sample arrives)
 - but only one worker processes it, based on the start_offset and num_workers
