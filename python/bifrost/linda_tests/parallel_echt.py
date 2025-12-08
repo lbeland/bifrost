@@ -62,14 +62,14 @@ class SineSourceBlock(bf.pipeline.SourceBlock):
         out = ospan.data
         
         # compute sample
-        sample = np.float32(np.sin(2.0 * np.pi * self.frequency * (self._emitted * self.dt))+np.random.normal(0,0.1))
+        sample = np.float32(np.sin(2.0 * np.pi * self.frequency * (self._emitted * self.dt)))
         # sample = np.float32((self._emitted * self.dt))
 
         out[:] = sample
         self._emitted += 1
-        if self._emitted % (self.sampling_rate*1) == 0:
-            print('sleeping...')
-            time.sleep(0.1)  # simulate some delay every second
+        # if self._emitted % (self.sampling_rate*1) == 0:
+        #     print('sleeping...')
+        #     time.sleep(0.1)  # simulate some delay every second
         # Stop if we've emitted enough samples
         if (self._emitted >= self.n_samples):
             print('done emitting samples')
@@ -77,10 +77,28 @@ class SineSourceBlock(bf.pipeline.SourceBlock):
         return [1]
     
 
-class FilterBlock(TransformBlock):
-    def __init__(self, iring, dtype=None, gulp_nframe=1, fs=None, order=2, freq=None,filter_type='bandstop',blockname=None,
+class NoiseBlock(TransformBlock):
+    def __init__(self, iring, dtype=None, gulp_nframe=1, noise_level=0.1,
              *args, **kwargs):
-        super(FilterBlock, self).__init__(iring, gulp_nframe=gulp_nframe, name=blockname,
+        super(NoiseBlock, self).__init__(iring, gulp_nframe=gulp_nframe,
+                                              *args, **kwargs)
+        self.dtype  = dtype
+        self.noise_level = noise_level
+    def on_sequence(self, iseq):
+        ihdr = iseq.header
+        ohdr = deepcopy(ihdr)
+        return ohdr
+    def on_data(self, ispan, ospan):
+        idata = ispan.data
+        out = ospan.data
+        # print(f"{self.name} got data gulp: {idata.shape}, {idata}")
+        out[:] = idata + np.random.normal(0,self.noise_level,idata.shape)
+        return
+
+class FilterBlock(TransformBlock):
+    def __init__(self, iring, dtype=None, gulp_nframe=1, fs=None, order=2, freq=None,filter_type='bandstop',
+             *args, **kwargs):
+        super(FilterBlock, self).__init__(iring, gulp_nframe=gulp_nframe,
                                               *args, **kwargs)
         self.dtype  = dtype
         self.order = order
@@ -122,9 +140,9 @@ class PrintBlock(TransformBlock):
 
 
 class ECHTBlock(TransformBlock):
-    def __init__(self, iring, f0,fs,dtype=None, gulp_nframe=1, blockname=None,win_size=1,
+    def __init__(self, iring, f0,fs,dtype=None, gulp_nframe=1,win_size=1,
              *args, **kwargs):
-        super(ECHTBlock, self).__init__(iring, gulp_nframe=gulp_nframe, name=blockname,
+        super(ECHTBlock, self).__init__(iring, gulp_nframe=gulp_nframe,
                                               *args, **kwargs)
         self.dtype  = dtype
         self.win_size = win_size
@@ -152,9 +170,9 @@ class ECHTBlock(TransformBlock):
 
     
 class ECHTWorkerBlock(TransformBlock):
-    def __init__(self, iring, f0,fs,dtype=None, gulp_nframe=1, blockname=None,start_offset=0, num_workers=2, win_size=1,
+    def __init__(self, iring, f0,fs,dtype=None, gulp_nframe=1,start_offset=0, num_workers=2, win_size=1,
              *args, **kwargs):
-        super(ECHTWorkerBlock, self).__init__(iring, gulp_nframe=gulp_nframe, name=blockname,
+        super(ECHTWorkerBlock, self).__init__(iring, gulp_nframe=gulp_nframe,
                                               *args, **kwargs)
         self.dtype  = dtype
         self.count = start_offset
@@ -220,27 +238,19 @@ f0  = 10
 win_size = int((1/f0 *2)*fs) # 2 cycles
 print(f"win_size: {win_size} samples")
 
-# Use the custom sine source instead of a binary file for this demo.
-data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=10, gulp_nframe=1,core=1)
+data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=30, gulp_nframe=1,core=1)
 bf.blocks.BinaryFileWriteBlock(data1, gulp_nframe=1000, file_ext='orig.bin')
 
-data2 = FilterBlock(data1, dtype='f32', gulp_nframe=win_size//5, fs=fs,order=3, freq=[9,11], filter_type='bandpass', blockname='filter',core=2)
+data2 = NoiseBlock(data1, dtype='f32', gulp_nframe=win_size//5, noise_level=0.3, name='noise')
+bf.blocks.BinaryFileWriteBlock(data2, gulp_nframe=1000, file_ext='noisy.bin')
 
-window_shift = int(1/f0 * 0.2 * fs) # generate output on every sample (f0/fs) or every 5% of cycle
+data3 = FilterBlock(data2, dtype='f32', gulp_nframe=win_size//5, fs=fs,order=3, freq=[9,11], filter_type='bandpass', name='filter',core=2)
+
+window_shift = int(1/f0 * 0.05 * fs) # generate output on every sample (f0/fs) or every 5% of cycle
 print(f"window_shift: {window_shift} samples")
+data4 = ECHTBlock(data3, f0=f0, fs=fs, gulp_nframe=window_shift, win_size=win_size, name='ecHT',core=3)
 
-# data3 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, start_offset=0, win_size=win_size,num_workers=3,blockname='echt_worker_1',core=1)
-# data4 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, start_offset=-1, win_size=win_size,num_workers=3,blockname='echt_worker_2',core=2)
-# data5 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, start_offset=-2, win_size=win_size,num_workers=3,blockname='echt_worker_3',core=3)
-# data2 = MergeBlock([data3, data4, data5], gulp_nframe=1, core=4)
-
-
-data3 = ECHTBlock(data2, f0=f0, fs=fs, gulp_nframe=window_shift, win_size=win_size, blockname='ecHT',core=3)
-
-# monitor = PrintBlock(data2, gulp_nframe=1,core=5)
-
-
-bf.blocks.BinaryFileWriteBlock(data3, gulp_nframe=1000, file_ext='echt.bin')
+bf.blocks.BinaryFileWriteBlock(data4, gulp_nframe=1000, file_ext='echt.bin')
 
 print("Running pipeline")
 pipeline = bf.get_default_pipeline()
@@ -256,7 +266,10 @@ print("All done")
  
 
 
-
+# data3 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, start_offset=0, win_size=win_size,num_workers=3,blockname='echt_worker_1',core=1)
+# data4 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, start_offset=-1, win_size=win_size,num_workers=3,blockname='echt_worker_2',core=2)
+# data5 = ECHTWorkerBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, start_offset=-2, win_size=win_size,num_workers=3,blockname='echt_worker_3',core=3)
+# data2 = MergeBlock([data3, data4, data5], gulp_nframe=1, core=4)
 """LOGIC
 - each worker reads each sliding window (so each time a new sample arrives)
 - but only one worker processes it, based on the start_offset and num_workers
