@@ -140,7 +140,7 @@ class PrintBlock(TransformBlock):
 
 
 class ECHTBlock(TransformBlock):
-    def __init__(self, iring, f0,fs,dtype=None, gulp_nframe=1,win_size=1,
+    def __init__(self, iring, f0,fs,dtype=None, gulp_nframe=1,win_size=1,calibrate=False,
              *args, **kwargs):
         super(ECHTBlock, self).__init__(iring, gulp_nframe=gulp_nframe,
                                               *args, **kwargs)
@@ -148,6 +148,7 @@ class ECHTBlock(TransformBlock):
         self.win_size = win_size
         self.f0 = f0
         self.fs = fs
+        self.calibrate = calibrate
     def define_input_overlap_nframe(self, iseq):
         return self.win_size - self._gulp_nframe
     def define_output_nframes(self, input_nframe):
@@ -159,7 +160,7 @@ class ECHTBlock(TransformBlock):
         filt_BW = self.f0 / 2
         l_freq = self.f0 - filt_BW / 2
         h_freq = self.f0 + filt_BW / 2
-        self.echt = ECHT(l_freq, h_freq, self.fs,filt_order=1, calibrate=True, f0=self.f0)
+        self.echt = ECHT(l_freq, h_freq, self.fs,filt_order=1, calibrate=self.calibrate, f0=self.f0)
         return ohdr
     def on_data(self, ispan, ospan):
         idata = ispan.data
@@ -238,19 +239,22 @@ f0  = 10
 win_size = int((1/f0 *2)*fs) # 2 cycles
 print(f"win_size: {win_size} samples")
 
-data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=10, gulp_nframe=1,core=1)
+data1 = SineSourceBlock(['sine'], sampling_rate=fs, frequency=10.0, seconds=1, gulp_nframe=1,core=1)
 bf.blocks.BinaryFileWriteBlock(data1, gulp_nframe=1000, file_ext='orig.bin')
 
-# data2 = NoiseBlock(data1, dtype='f32', gulp_nframe=win_size//5, noise_level=0, name='noise')
+# data2 = NoiseBlock(data1, dtype='f32', gulp_nframe=win_size//5, noise_level=0.05, name='noise')
 # bf.blocks.BinaryFileWriteBlock(data2, gulp_nframe=1000, file_ext='noisy.bin')
-
 # data3 = FilterBlock(data2, dtype='f32', gulp_nframe=win_size//5, fs=fs,order=3, freq=[9,11], filter_type='bandpass', name='filter',core=2)
 
-window_shift = int(1/f0 *0.05 * fs) # generate output on every sample (f0/fs) or every 5% of cycle
+window_shift = int(1/f0 *0.1 * fs) # generate output on every sample (f0/fs) or every 5% of cycle
 print(f"window_shift: {window_shift} samples")
-data4 = ECHTBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, win_size=win_size, name='ecHT',core=3)
+data4 = ECHTBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, win_size=win_size, name='ecHT_cal',core=3,calibrate=True)
 
-bf.blocks.BinaryFileWriteBlock(data4, gulp_nframe=1000, file_ext='echt.bin')
+data5 = ECHTBlock(data1, f0=f0, fs=fs, gulp_nframe=window_shift, win_size=win_size, name='ecHT',core=4,calibrate=False)
+
+
+bf.blocks.BinaryFileWriteBlock(data4, gulp_nframe=1000, file_ext='echt_cal.bin')
+bf.blocks.BinaryFileWriteBlock(data5, gulp_nframe=1000, file_ext='echt.bin')
 
 print("Running pipeline")
 pipeline = bf.get_default_pipeline()
