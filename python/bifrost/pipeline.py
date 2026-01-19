@@ -479,8 +479,8 @@ class SourceBlock(Block):
                             device.stream_synchronize()
                             self.commit_spans(ospans, ostrides_actual, ogulp_overlaps)
                             # TODO: Is this an OK way to detect end-of-data?
-                            if any([ostride == 0 for ostride in ostrides_actual]):
-                                break
+                            # if any([ostride == 0 for ostride in ostrides_actual]):
+                            #     break
                         cur_time = time.time()
                         process_time = cur_time - prev_time
                         prev_time = cur_time

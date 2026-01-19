@@ -35,6 +35,9 @@ __pycache__/
 junk/
 outtakes.*
 
+# Data files
+*.csv
+
 # Log files
 *.log
 *.prof
