@@ -5,9 +5,8 @@ import argparse
 from copy import deepcopy
 import time
 import bifrost as bf
-from meegkit.phase import ECHT
 
-from bifrost.pipeline import TransformBlock, MultiTransformBlock
+from bifrost.pipeline import TransformBlock
 
 
 class Producer(bf.pipeline.SourceBlock):
@@ -61,7 +60,7 @@ class Producer(bf.pipeline.SourceBlock):
             
             data = self.default_data * now
             # print(self.n_emitted, data)
-
+            print(data.shape)
             ospan.data[:] = data
             self.n_emitted += 1
             self.send_times.append(now)
@@ -128,8 +127,8 @@ class Consumer(TransformBlock):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_messages", type=int, default=1000)
-    parser.add_argument("--freq", type=float, default=2500)
-    parser.add_argument("--msg_size", type=int, default=1)
+    parser.add_argument("--freq", type=int, default=2500)
+    parser.add_argument("--msg_size", type=int, default=64)
     parser.add_argument("--num_channels", type=int, default=1)
     parser.add_argument("--output_file", type=str, default="send_times.csv")
     args = parser.parse_args()
