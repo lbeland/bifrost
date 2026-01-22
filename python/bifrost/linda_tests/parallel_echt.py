@@ -9,6 +9,7 @@ import time
 import bifrost as bf
 from meegkit.phase import ECHT
 from scipy.signal import iirfilter, lfilter, lfilter_zi, sosfilt, sosfilt_zi, butter
+import matplotlib.pyplot as plt
 
 from bifrost.pipeline import TransformBlock, MultiTransformBlock
 
@@ -154,6 +155,11 @@ class ECHTBlock(TransformBlock):
     def define_output_nframes(self, input_nframe):
         # return one value per window (mean of the window), default would be n_input_frames=n_output_frames
         return 1
+    def shutdown(self) -> None:
+        print(f"Processing time per window in {self.name}: {np.mean(self.proc_times)} +- {np.std(self.proc_times)} seconds")
+        plt.plot(self.proc_times)
+        plt.show()
+        self.shutdown_event.set()
     def on_sequence(self, iseq):
         ihdr = iseq.header
         ohdr = deepcopy(ihdr)
@@ -161,11 +167,14 @@ class ECHTBlock(TransformBlock):
         l_freq = self.f0 - filt_BW / 2
         h_freq = self.f0 + filt_BW / 2
         self.echt = ECHT(l_freq, h_freq, self.fs,filt_order=1, calibrate=self.calibrate, f0=self.f0)
+        self.proc_times = []
         return ohdr
     def on_data(self, ispan, ospan):
-        idata = ispan.data
+        idata = ispan.data.reshape(-1)
         # print(f"{self.name} got data gulp: {idata.shape}, {idata[0:11]}")
-        ospan.data[:] = np.angle(self.echt.fit_transform(idata))[-1]
+        start_time = time.time()
+        ospan.data[:] = np.angle(self.echt.fit_transform(idata)[-1])
+        self.proc_times.append(time.time() - start_time)
         # print(f"{self.name}, output: {odata.shape}, {odata}")
         return 
 
