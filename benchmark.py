@@ -19,16 +19,19 @@ class Producer(bf.pipeline.SourceBlock):
         n_samples: optional maximum number of samples to produce (None for infinite)
         gulp_nframe: number of frames per gulp
     """
-    def __init__(self, sourcenames, sampling_rate=10000, n_messages=1000, n_channels=1, msg_size=1, output_file=None,gulp_nframe=1, *args, **kwargs):
-        super(Producer, self).__init__(sourcenames, gulp_nframe=gulp_nframe, *args, **kwargs)
+    def __init__(self, sourcenames, sampling_rate=10000, n_messages=1000, n_channels=1, msg_size=1, output_file=None, *args, **kwargs):
+        super(Producer, self).__init__(sourcenames, gulp_nframe=1, *args, **kwargs)
         self.sampling_rate = float(sampling_rate)
         self.PERIOD_S = 1.0 / self.sampling_rate
         self.n_samples = int(n_messages)
+        self.n_channels = n_channels
+        self.msg_size = msg_size
         self.n_emitted = 0
         self.send_times = []
         self.default_data = np.ones((n_channels, msg_size), dtype=np.float64)
         self.next_deadline = None
         self.output_file = output_file
+
     def create_reader(self, sourcename):
         # Simple context manager that yields self as the reader object
         from contextlib import contextmanager
@@ -42,7 +45,7 @@ class Producer(bf.pipeline.SourceBlock):
             'name': filename,
             '_tensor': {
                 'dtype':  'f64',
-                'shape':  [-1, self.gulp_nframe],
+                'shape':  [-1, self.n_channels, self.msg_size],
                 'labels':  ['streamed', 'gulped'],
                 'units': [None, None],
                 'scales': [[0, 1], [0, 1]]
@@ -59,15 +62,14 @@ class Producer(bf.pipeline.SourceBlock):
             ospan = ospans[0]
             
             data = self.default_data * now
-            # print(self.n_emitted, data)
-            print(data.shape)
+            # print(self.n_emitted, data.shape, data)
             ospan.data[:] = data
             self.n_emitted += 1
             self.send_times.append(now)
 
             self.next_deadline += self.PERIOD_S
-            # Stop if we've emitted enough samples
-            if (self.n_emitted >= self.n_samples):
+            # Stop if we've emitted enough samples (first is omitted from timing)
+            if (self.n_emitted >= self.n_samples + 1):
                 self.shutdown_event.set()
             return [1]
         else:
@@ -99,9 +101,10 @@ class Consumer(TransformBlock):
         return ohdr
     def on_data(self, ispan, ospan):
         idata = ispan.data
+        # print(f"Consumer got data gulp: {idata.shape}, {idata}")
         now = time.monotonic()
         self.recv_times.append(now)
-        self.process_times.append(now - idata[0,0])
+        self.process_times.append(now - idata[0,0,0])
 
         self.n_recv += 1
         return None
@@ -128,15 +131,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--n_messages", type=int, default=1000)
     parser.add_argument("--freq", type=int, default=2500)
-    parser.add_argument("--msg_size", type=int, default=64)
-    parser.add_argument("--num_channels", type=int, default=1)
+    parser.add_argument("--msg_size", type=int, default=3)
+    parser.add_argument("--num_channels", type=int, default=2)
     parser.add_argument("--output_file", type=str, default="send_times.csv")
     args = parser.parse_args()
     os.makedirs("results", exist_ok=True)
 
-    data1 = Producer(['random'], sampling_rate=args.freq, n_messages=args.n_messages, n_channels=args.num_channels, msg_size=args.msg_size,output_file=f"results/{args.freq}_{args.num_channels}_{args.msg_size}_send_times.csv", gulp_nframe=1,core=0)
+    if os.path.exists(f"results/{args.freq}_{args.num_channels}_{args.msg_size}_recv_times.csv"):
+        return  # Skip if already exists
 
-    data2 = Consumer(data1, output_file=f"results/{args.freq}_{args.num_channels}_{args.msg_size}_recv_times.csv", gulp_nframe=1,core=2)
+    data1 = Producer(['random'], sampling_rate=args.freq, n_messages=args.n_messages, n_channels=args.num_channels, msg_size=args.msg_size,output_file=f"results/{args.freq}_{args.num_channels}_{args.msg_size}_send_times.csv")
+
+    data2 = Consumer(data1, output_file=f"results/{args.freq}_{args.num_channels}_{args.msg_size}_recv_times.csv", gulp_nframe=1)
 
     pipeline = bf.get_default_pipeline()
     # pipeline.dot_graph().render(filename='benchmark', format='png', cleanup=True)
