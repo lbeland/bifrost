@@ -149,11 +149,13 @@ def main():
     parser.add_argument("--n_messages", type=int, default=1000)
     parser.add_argument("--msg_size", type=int, default=3)
     parser.add_argument("--num_channels", type=int, default=2)
+    parser.add_argument("--max_buffer_size", type=int, default=10)  # not used
+    parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--output_file", type=str, default="send_times.csv")
     args = parser.parse_args()
     os.makedirs("results", exist_ok=True)
 
-    if os.path.exists(f"results/{args.num_channels}_{args.msg_size}_Consumer.csv"):
+    if os.path.exists(f"results/{args.num_channels}_{args.msg_size}_Consumer.csv") and not args.overwrite:
         return  # Skip if already exists
 
     data1 = Producer(['random'], n_messages=args.n_messages, n_channels=args.num_channels, msg_size=args.msg_size,output_file=f"results/{args.num_channels}_{args.msg_size}_Producer.csv")
