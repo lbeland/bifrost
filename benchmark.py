@@ -4,12 +4,15 @@ import pandas as pd
 import argparse
 import threading
 import warnings
+from pathlib import Path
 
 from copy import deepcopy
 import time
 import bifrost as bf
 
 from bifrost.pipeline import TransformBlock
+
+REPO_ROOT = Path(__file__).resolve().parent
 
 
 def _apply_thread_priority(block_name, priority):
@@ -233,7 +236,7 @@ def main():
     parser.add_argument("--output_file", type=str, default="send_times.csv")
     args = parser.parse_args()
 
-    output_folder = "rt_results"
+    output_folder = f"{REPO_ROOT}/rt_results"
     os.makedirs(output_folder, exist_ok=True)
 
     if os.path.exists(f"{output_folder}/{args.num_channels}_{args.msg_size}_Consumer.csv") and not args.overwrite:
