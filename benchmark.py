@@ -14,43 +14,10 @@ from bifrost.pipeline import TransformBlock
 
 REPO_ROOT = Path(__file__).resolve().parent
 
+pid = 0  # 0 = aktueller Prozess
 
-def _apply_thread_priority(block_name, priority):
-    """Apply Linux nice priority for the current thread.
-
-    Linux nice range is [-20, 19], where lower values are higher priority.
-    """
-    if priority is None:
-        return
-
-    target_priority = int(priority)
-    min_prio, max_prio = -20, 19
-    if target_priority < min_prio or target_priority > max_prio:
-        warnings.warn(
-            f"{block_name}: Priority {target_priority} outside valid range "
-            f"[{min_prio}, {max_prio}] for nice. Clamping.",
-            RuntimeWarning,
-        )
-        target_priority = min(max(target_priority, min_prio), max_prio)
-
-    try:
-        tid = threading.get_native_id()
-        os.setpriority(os.PRIO_PROCESS, tid, target_priority)
-        print(
-            f"{block_name}: nice_priority={target_priority} tid={tid}"
-        )
-    except PermissionError:
-        warnings.warn(
-            f"{block_name}: Permission denied while setting nice priority to "
-            f"{target_priority}. Lowering nice value (e.g. -10) requires "
-            f"CAP_SYS_NICE or root.",
-            RuntimeWarning,
-        )
-    except OSError as exc:
-        warnings.warn(
-            f"{block_name}: Failed to set nice priority {target_priority}: {exc}",
-            RuntimeWarning,
-        )
+param = os.sched_param(sched_priority=99)
+os.sched_setscheduler(pid, os.SCHED_FIFO, param)
 
 
 class Producer(bf.pipeline.SourceBlock):
@@ -85,7 +52,6 @@ class Producer(bf.pipeline.SourceBlock):
         self.priority = priority
 
     def run(self) -> None:
-        _apply_thread_priority("Producer", self.priority)
         super(Producer, self).run()
 
     def create_reader(self, sourcename):
@@ -164,7 +130,6 @@ class Consumer(TransformBlock):
         self.priority = priority
 
     def run(self) -> None:
-        _apply_thread_priority("Consumer", self.priority)
         super(Consumer, self).run()
 
     def on_sequence(self, iseq):
@@ -249,7 +214,6 @@ def main():
         n_channels=args.num_channels,
         msg_size=args.msg_size,
         output_file=f"{output_folder}/{args.num_channels}_{args.msg_size}_Producer.csv",
-        priority=19,
     )
 
     data2 = Consumer(
@@ -257,7 +221,6 @@ def main():
         output_file=f"{output_folder}/{args.num_channels}_{args.msg_size}_Consumer.csv",
         gulp_nframe=1,
         core=5,
-        priority=19,
     )
 
     pipeline = bf.get_default_pipeline()
