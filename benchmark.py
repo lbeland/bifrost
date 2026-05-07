@@ -38,6 +38,7 @@ class Producer(bf.pipeline.SourceBlock):
         msg_size=1,
         output_file=None,
         priority=None,
+        t_wait=0.0001,
         *args,
         **kwargs,
     ):
@@ -46,6 +47,7 @@ class Producer(bf.pipeline.SourceBlock):
         self.n_channels = n_channels
         self.msg_size = msg_size
         self.n_emitted = 0
+        self.t_wait = t_wait
         self.send_times = []
         self.default_data = np.ones((n_channels, msg_size), dtype=np.float64)
         self.output_file = output_file
@@ -76,6 +78,8 @@ class Producer(bf.pipeline.SourceBlock):
         return [ohdr]
 
     def on_data(self, reader, ospans):
+        if self.t_wait > 0:
+            time.sleep(self.t_wait)  # Let Consumer process last message
         now = time.monotonic()
         ospan = ospans[0]
         ospan.data[:] = self.default_data * now
@@ -198,6 +202,7 @@ def main():
     parser.add_argument("--num_channels", type=int, default=2)
     parser.add_argument("--max_buffer_size", type=int, default=10)  # not used
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--t_wait", type=float, default=0.0001)
     parser.add_argument("--output_file", type=str, default="send_times.csv")
     args = parser.parse_args()
 
@@ -213,6 +218,7 @@ def main():
         n_messages=args.n_messages,
         n_channels=args.num_channels,
         msg_size=args.msg_size,
+        t_wait=args.t_wait,
         output_file=f"{output_folder}/{args.num_channels}_{args.msg_size}_Producer.csv",
     )
 
