@@ -1,5 +1,5 @@
 asttokens==3.0.0
--e git+https://github.com/lbeland/bifrost.git@58df784dc467a2f538035c8d8412d60ce18e8b0a#egg=bifrost&subdirectory=python
+-e ./bifrost/vendor/bifrost-src/python
 comm==0.2.3
 contextlib2==21.6.0
 contourpy==1.3.3

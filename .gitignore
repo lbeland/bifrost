@@ -46,6 +46,7 @@ outtakes.*
 .Python
 env/
 venv/
+vendor/
 build/
 develop-eggs/
 dist/
