@@ -36,7 +36,7 @@ import atexit
 from threading import Lock
 import os
 
-from typing import Union
+from typing import Union, Optional
 
 from bifrost import telemetry
 telemetry.track_module()

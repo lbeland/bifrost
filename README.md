@@ -132,6 +132,11 @@ To configure Bifrost for you your system and build the library, then run:
     $ make -j
     $ sudo make install
 
+I had to use so that the thrust headers are found:
+    make -j \
+    CPPFLAGS='-DBF_CUDA_ENABLED=1 -I/usr/local/cuda/include -I/usr/local/cuda/include/cccl -I.' \
+    CXXFLAGS='-O2 -march=native -fPIC'
+
 By default this will install the library and headers into /usr/local/lib and
 /usr/local/include respectively.  You can use the --prefix option to configure
 to change this.
