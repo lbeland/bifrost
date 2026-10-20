@@ -2,8 +2,6 @@ import os
 import numpy as np
 import pandas as pd
 import argparse
-import threading
-import warnings
 from pathlib import Path
 
 from copy import deepcopy
@@ -109,9 +107,6 @@ class Producer(bf.pipeline.SourceBlock):
         results = pd.DataFrame({"Metric":["mean", "std", "max"],"Send_period": [mean_send_period, std_send_period, max_send_period]})
         results.to_csv(self.output_file, index=False)
         print("Producer stopped.")
-
-        send_times_diff.tofile(self.output_file + "_send_times.csv", sep="\n")
-        print("Producer stopped.")
         
 
 class Consumer(TransformBlock):
@@ -186,12 +181,18 @@ class Consumer(TransformBlock):
 
         results.to_csv(self.output_file, index=False)
 
-        recv_times_diff.tofile(self.output_file + "_recv_times.csv", sep="\n")
-        np.array(self.process_times).tofile(self.output_file + "_process_times.csv", sep="\n")
-
-
         print("Consumer stopped.")
         self.shutdown_event.set()
+
+        # Persist per-packet process_times for post-processing
+        try:
+            base = self.output_file[:-4] if self.output_file.lower().endswith('.csv') else self.output_file
+            proc_path = f"{base}_process_times.csv"
+            with open(proc_path, "w") as f:
+                for v in self.process_times:
+                    f.write(f"{v}\n")
+        except Exception:
+            pass
 
 
 
@@ -226,7 +227,7 @@ def main():
         data1,
         output_file=f"{output_folder}/{args.num_channels}_{args.msg_size}_Consumer.csv",
         gulp_nframe=1,
-        core=5,
+        core=7,
     )
 
     pipeline = bf.get_default_pipeline()
